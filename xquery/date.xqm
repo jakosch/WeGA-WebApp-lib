@@ -24,8 +24,8 @@ declare variable $date:DATE_FORMAT_ERROR := QName("http://xquery.weber-gesamtaus
  : @return the constructed date as xs:date or empty
  :)
 declare function date:getOneNormalizedDate($date as element()?, $latest as xs:boolean) as xs:date? {
-    if($latest) then max($date/@* ! date:getCastableDate(., $latest))
-    else min($date/@* ! date:getCastableDate(., $latest))
+    if($latest) then max($date/@* ! date:getCastableDate(functx:substring-after-if-contains(., '/'), $latest))
+    else min($date/@* ! date:getCastableDate(functx:substring-before-if-contains(., '/'), $latest))
 };
 
 
@@ -63,10 +63,16 @@ declare %private function date:getCastableDate($date as xs:string, $latest as xs
  : @param $year the year as (positive or negative) integer
  : @param $lang the language switch (en|de)
  : @return xs:string
+ : 
+ : @editor Christian Schaper
+ : added CE for low years after 0
  :)
 declare function date:formatYear($year as xs:int, $lang as xs:string) as xs:string {
-    if($year gt 0) then $year cast as xs:string
-    else if($lang eq 'en') then concat($year*-1,' BC')
+        if($year gt 100) then $year cast as xs:string
+    else if($year gt 0) then
+        if ($lang eq 'en') then concat ($year*1, ' CE')
+        else concat ($year*1, ' n.&#8239;Chr.')
+    else if($lang eq 'en') then concat($year*-1,' BCE')
     else concat($year*-1,' v.&#8239;Chr.')
 };
 
@@ -108,7 +114,7 @@ declare function date:format-date($date as xs:date, $picture as xs:string, $lang
  : @param $get-language-string a callback function that is expected to return a localized string for a given term
  : @return text
  :)
-declare function date:printDate($date as element()?, $lang as xs:string, $get-language-string as function(xs:string, xs:string*) as xs:string, $get-picture-string as function(empty()) as xs:string) as xs:string? {
+declare function date:printDate($date as element()?, $lang as xs:string, $get-language-string as function(xs:string, xs:string*) as xs:string, $get-picture-string as function() as xs:string) as xs:string? {
     if($date) then (
         let $picture-string := $get-picture-string() (: if($lang = 'de') then '[D]. [MNn] [Y]' else '[MNn] [D], [Y]':)
         let $notBefore  := if($date/@notBefore) then date:getCastableDate(data($date/@notBefore),false())
@@ -157,7 +163,7 @@ declare function date:printDate($date as element()?, $lang as xs:string, $get-la
                     if(year-from-date($notBefore) eq year-from-date($notAfter)) then 
                         if(month-from-date($notBefore) eq month-from-date($notAfter)) then 
                             if(day-from-date($notBefore) = 1 and day-from-date($notAfter) = functx:days-in-month($notAfter)) then concat($get-language-string(concat('month',month-from-date($notAfter)),$lang),' ',date:formatYear(year-from-date($notAfter), $lang)) (: August 1879 :)
-                            else $get-language-string('dateBetween',(xs:string(day-from-date($notBefore)),date:format-date($notAfter,$picture-string, $lang))) (: Zwischen 1. und 7. August 1801 :)
+                            else $get-language-string('dateBetween',(date:format-date($notBefore,'[D].',$lang),date:format-date($notAfter,$picture-string, $lang))) (: Zwischen 1. und 7. August 1801 :)                            
                         else if(ends-with($notBefore, '01-01') and ends-with($notAfter, '12-31')) then date:formatYear(year-from-date($notBefore), $lang) (: 1879 :)
                         else if($notBefore_o castable as xs:gYearMonth) then
                             if($notAfter_o castable as xs:gYearMonth) then $get-language-string('dateBetween',(xs:string(date:format-date($notBefore,'[MNn]', $lang)),date:format-date($notAfter,'[MNn] [Y]', $lang))) (: Zwischen Mai und August 1909 :)
@@ -187,13 +193,13 @@ declare function date:printDate($date as element()?, $lang as xs:string, $get-la
                     if(year-from-date($from) eq year-from-date($to)) then 
                         if(month-from-date($from) eq month-from-date($to)) then 
                             if(day-from-date($from) = 1 and day-from-date($to) = functx:days-in-month($to)) then date:format-date($from,'[MNn] [Y]', $lang) (: August 1879 :)
-                            else $get-language-string('fromTo',(xs:string(day-from-date($from)),date:format-date($to,$picture-string, $lang))) (: Vom 1. bis 7. August 1801 :)
+                            else $get-language-string('noFromTo',(date:format-date($from,'[D].',$lang),date:format-date($to,$picture-string, $lang))) (: 1. bis 7. August 1801 :)
                         else if(ends-with($from, '01-01') and ends-with($to, '12-31')) then date:formatYear(year-from-date($from), $lang) (: 1879 :)
                         else if($from_o castable as xs:gYearMonth) then
                             if($to_o castable as xs:gYearMonth) then $get-language-string('noFromTo',(date:format-date($from,'[MNn]', $lang),date:format-date($to,'[MNn] [Y]', $lang))) (: Mai bis August 1909 :)
                             else $get-language-string('noFromTo',(date:format-date($from,'[MNn]', $lang),date:format-date($to,$picture-string, $lang))) (: Mai bis 8. August 1909 :)
                         else if($to_o castable as xs:gYearMonth) then $get-language-string('noFromTo',(replace(date:format-date($from,$picture-string, $lang), '(,\s+)?' || date:formatYear(year-from-date($from), $lang), ''), date:format-date($to,'[MNn] [Y]', $lang))) (: 4. Juli bis August 1789 :)
-                        else $get-language-string('fromTo', (replace(date:format-date($from,$picture-string, $lang), '(,\s+)?' || date:formatYear(year-from-date($from), $lang), ''), date:format-date($to,$picture-string, $lang))) (: Vom 1. Juli bis 4. August 1789 :)
+                        else $get-language-string('noFromTo', (replace(date:format-date($from,$picture-string, $lang), '(,\s+)?' || date:formatYear(year-from-date($from), $lang), ''), date:format-date($to,$picture-string, $lang))) (: 1. Juli bis 4. August 1789 :)
                     else if($from_o castable as xs:gYear) then
                         if($to_o castable as xs:gYear) then $get-language-string('noFromTo',(date:formatYear(year-from-date($from), $lang),date:formatYear(year-from-date($to), $lang))) (: 1879 bis 1881 :)
                         else if($to_o castable as xs:gYearMonth) then $get-language-string('noFromTo',(date:formatYear(year-from-date($from), $lang),date:format-date($to,'[MNn] [Y]', $lang))) (: 1879 bis März 1881 :)
